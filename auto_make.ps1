@@ -12,9 +12,10 @@
     This is the location of the FPGAmeboy toolchain root. 
 
     https://github.com/esden/hadbadge2019_fpgasoc/blob/master/doc/toolchain-win.md
-
 .PARAMETER import_only
-    If set to $true this flag will cause the functions to be IMPORTED ONLY, and the dameon WILL NOT START automatically  
+    If set this flag will cause the functions to be IMPORTED ONLY, and the dameon WILL NOT START automatically  
+.PARAMETER as_job
+    If set this flag will run the daemon as a background job and output to a log file
 .INPUTS
   <Inputs if any, otherwise state None>
 .OUTPUTS
@@ -33,7 +34,8 @@ param (
     [string]$config_root = ".\",
     [string]$config_filename = "config.ini",
     [string]$toolchain_root = "C:\ecp5-toolchain-windows-v1.6.9\bin",
-    [switch]$import_only = $false
+    [switch]$import_only = $false,
+    [switch]$as_job = $false
 )
 
 if($(Get-ExecutionPolicy) -ne "Bypass"){
@@ -162,7 +164,7 @@ function run_daemon()
                 }
                 
                 # Lick the .... Dismount the filesystem ^_^
-                $vol = get-wmiobject -Class Win32_Volume | where{$_.Name -eq "$drive"+':\'}  
+                $vol = get-wmiobject -Class Win32_Volume | Where-Object{$_.Name -eq "$drive"+':\'}  
                 $vol.DriveLetter = $null  
                 $vol.Put()  
                 $vol.Dismount($false, $false)
@@ -209,9 +211,23 @@ function Get-IniContent ($filePath)
     return $ini
 }
 
-if($import_only){
+if ($import_only) {
     Write-Host "Successfully imported functions from auto_make.ps1!!!"
-}else{
+} elseif ($as_job) {
+    # Get the auto_make file location
+    $filepath = $(Get-ChildItem .\auto_make.ps1).DirectoryName
+
+    Write-Host "Starting the FPGAmeboy CI Daemon..."
+    
+    # Start the job
+    $job = Start-Job -ArgumentList $filepath -ScriptBlock {
+        Set-Location $args[0]
+        powershell .\auto_make.ps1 | Out-File .\auto_make.log -Append
+    } 
+    # Instruct users on how to end this daemon
+    Write-Host "To end this daemon, please run: `n
+    Stop-Job -Id $($job.Id)`n"
+} else {
     # Run the daemon
     Write-Host "Daemon starting up..."
     run_daemon -config_root $config_root -config_filename $config_filename
